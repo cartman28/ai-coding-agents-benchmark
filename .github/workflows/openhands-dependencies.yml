@@ -1,0 +1,54 @@
+name: OpenHands dependency diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install clean pinned SDK and tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'openhands-sdk==1.50.1' 'openhands-tools==1.50.1'
+      - name: Print resolved versions and package constraints
+        run: |
+          python - <<'PY'
+          from importlib.metadata import version, requires
+          for package in ("openhands-sdk", "openhands-tools", "litellm", "mcp", "fastmcp"):
+              print(f"{package}=={version(package)}")
+          for package in ("openhands-sdk", "litellm", "fastmcp"):
+              print(f"--- {package} relevant requirements ---")
+              for item in requires(package) or []:
+                  if any(x in item.lower() for x in ("mcp", "litellm", "fastmcp")):
+                      print(item)
+          PY
+      - name: Check dependency consistency
+        run: python -m pip check
+      - name: Check MCP and LiteLLM runtime imports
+        run: |
+          python - <<'PY'
+          import importlib
+          import mcp.types
+          print("mcp.types.CacheableResult exists:", hasattr(mcp.types, "CacheableResult"))
+          for module in ("litellm.responses.mcp.chat_completions_handler", "litellm.responses.mcp.litellm_proxy_mcp_handler"):
+              print("Importing", module)
+              importlib.import_module(module)
+          print("LiteLLM MCP imports OK")
+          PY
+      - name: Check OpenHands imports
+        if: always()
+        run: |
+          python - <<'PY'
+          from openhands.sdk import Agent, Conversation, LLM
+          from openhands.tools.preset.default import get_default_tools
+          print("OpenHands imports OK")
+          PY
