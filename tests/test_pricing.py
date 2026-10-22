@@ -7,6 +7,11 @@ class PricingTests(unittest.TestCase):
     def test_standard_price(self):
         self.assertEqual(discounted_price(1000, 20), 800)
 
+    def test_acceptance_examples(self):
+        self.assertEqual(discounted_price(199, 25), 149)
+        self.assertEqual(discounted_price(99, 10), 89)
+        self.assertEqual(discounted_price(1, 50), 0)
+
     def test_no_discount(self):
         self.assertEqual(discounted_price(1000, 0), 1000)
 
