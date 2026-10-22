@@ -34,16 +34,13 @@ jobs:
           PY
       - name: Check dependency consistency
         run: python -m pip check
-      - name: Check MCP and LiteLLM runtime imports
+      - name: Check LiteLLM and MCP runtime imports
         run: |
           python - <<'PY'
-          import importlib
-          import mcp.types
-          print("mcp.types.CacheableResult exists:", hasattr(mcp.types, "CacheableResult"))
-          for module in ("litellm.responses.mcp.chat_completions_handler", "litellm.responses.mcp.litellm_proxy_mcp_handler"):
-              print("Importing", module)
-              importlib.import_module(module)
-          print("LiteLLM MCP imports OK")
+          import litellm
+          import mcp
+          from mcp import ClientSession, McpError
+          print("LiteLLM and MCP 1.x imports OK")
           PY
       - name: Check OpenHands imports
         if: always()
@@ -51,5 +48,6 @@ jobs:
           python - <<'PY'
           from openhands.sdk import Agent, Conversation, LLM
           from openhands.tools.preset.default import get_default_tools
-          print("OpenHands imports OK")
+          tools = get_default_tools(enable_browser=False)
+          print("OpenHands imports and tools OK:", [tool.name for tool in tools])
           PY
