@@ -51,7 +51,7 @@ jobs:
       - name: Install OpenHands SDK
         run: |
           python -m pip install 'openhands-sdk==1.50.1' 'openhands-tools==1.50.1'
-          python -m pip install --upgrade 'mcp>=1.19,<2'
+          python -m pip install 'mcp>=2.2.0,<3'
           python -c 'from mcp.types import CacheableResult; print("MCP compatibility OK")'
       - name: Run OpenHands on issue 1
         run: python /tmp/benchmark-openhands-runner.py < /tmp/benchmark-issue.txt
