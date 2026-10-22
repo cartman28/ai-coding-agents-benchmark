@@ -1,0 +1,35 @@
+name: OpenHands SDK preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Gemini credential is configured
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::Repository secret GEMINI_API_KEY is missing"
+            exit 1
+          fi
+          echo "Gemini credential is configured (value not displayed)"
+      - name: Install pinned OpenHands SDK
+        run: python -m pip install 'openhands-sdk==1.50.1' 'openhands-tools==1.50.1'
+      - name: Verify SDK imports
+        run: |
+          python - <<'PY'
+          from openhands.sdk import LLM, Agent, Conversation
+          from openhands.tools.preset.default import get_default_tools
+          print("OpenHands SDK imports OK")
+          PY
