@@ -13,6 +13,10 @@ class PricingTests(unittest.TestCase):
     def test_full_discount(self):
         self.assertEqual(discounted_price(1000, 100), 0)
 
+    def test_rounding_regression(self):
+        self.assertEqual(discounted_price(150, 10), 135)
+        self.assertEqual(discounted_price(101, 50), 50)
+
     def test_invalid_inputs(self):
         for price, percent in [(-1, 10), (100, -1), (100, 101), (True, 10), (100, True)]:
             with self.subTest(price=price, percent=percent):
