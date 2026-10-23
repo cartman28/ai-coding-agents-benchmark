@@ -1,0 +1,53 @@
+name: Independent Checkout Acceptance - Task 2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - benchmark/independent_checkout_acceptance.py
+      - .github/workflows/independent-checkout-task2.yml
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: ${{ matrix.agent }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: OpenCode
+            branch: benchmark/opencode-issue-2
+          - agent: Gemini CLI
+            branch: benchmark/gemini-cli-issue-2
+          - agent: OpenHands SDK
+            branch: benchmark/openhands-issue-2
+    steps:
+      - name: Checkout benchmark infrastructure
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          path: harness
+      - name: Checkout frozen candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirm candidate scope and baseline
+        working-directory: candidate
+        run: |
+          git diff --name-only 24d9555521e85c4d1f40da94b03361e70f469b24 HEAD | sort > /tmp/changed.txt
+          printf 'pricebot/checkout.py\ntests/test_checkout.py\n' > /tmp/expected.txt
+          diff -u /tmp/expected.txt /tmp/changed.txt
+          git rev-parse HEAD
+      - name: Run independent reference tests
+        working-directory: candidate
+        run: |
+          python ../harness/benchmark/independent_checkout_acceptance.py
