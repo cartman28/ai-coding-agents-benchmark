@@ -128,6 +128,9 @@ def _validate_order_schema(order):
     if not isinstance(history, list) or len(history) == 0:
         raise ValueError("history must be a nonempty list")
     
+    sku_to_orig = {item["sku"]: item["quantity"] for item in items}
+    cum_ref = {sku: 0 for sku in sku_to_orig}
+
     last_ver = 0
     for entry in history:
         if not isinstance(entry, dict):
@@ -143,8 +146,15 @@ def _validate_order_schema(order):
             raise ValueError("history status must be a string")
         if event == "refund":
             q_dict = entry.get("quantities")
-            if not isinstance(q_dict, dict):
-                raise ValueError("refund history must have quantities dict")
+            if not isinstance(q_dict, dict) or len(q_dict) == 0:
+                raise ValueError("refund history must have a nonempty quantities dict")
+            for sku, q in q_dict.items():
+                if isinstance(sku, bool) or not isinstance(sku, str) or sku not in sku_to_orig:
+                    raise ValueError("invalid sku in refund history quantities")
+                _validate_positive_int(q, "refund history quantity")
+                cum_ref[sku] += q
+                if cum_ref[sku] > sku_to_orig[sku]:
+                    raise ValueError("cumulative refunded quantity exceeds original quantity")
             _validate_nonnegative_int(entry.get("amount_cents"), "amount_cents")
 
     if order["version"] != last_ver:
@@ -312,7 +322,7 @@ def refund_order(order, *, quantities=None, expected_version=None):
         if entry.get("event") == "refund":
             for sku, q in entry.get("quantities", {}).items():
                 if sku in current_cumulative:
-                    current_cumulative[sku] = q
+                    current_cumulative[sku] += q
 
     if quantities is None:
         # Refund all remaining refundable units
@@ -360,8 +370,8 @@ def refund_order(order, *, quantities=None, expected_version=None):
     prev_total_cum_refund = sum(prev_cum_amounts.values())
     incremental_refund = new_total_cum_refund - prev_total_cum_refund
 
-    if incremental_refund <= 0:
-        raise ValueError("refund amount must be positive")
+    if incremental_refund < 0:
+        raise ValueError("refund amount cannot be negative")
 
     new_refunded_cents = order["refunded_cents"] + incremental_refund
     if new_refunded_cents > order["total_cents"]:
@@ -375,7 +385,7 @@ def refund_order(order, *, quantities=None, expected_version=None):
         "version": new_version,
         "event": "refund",
         "status": order["status"],
-        "quantities": new_cumulative,
+        "quantities": req_quantities,
         "amount_cents": incremental_refund
     })
 
