@@ -19,6 +19,10 @@ class PricingTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     discounted_price(price, percent)
 
+    def test_regression_rounding(self):
+        self.assertEqual(discounted_price(101, 50), 50)
+        self.assertEqual(discounted_price(150, 20), 120)
+
 
 if __name__ == "__main__":
     unittest.main()
