@@ -32,7 +32,8 @@ jobs:
           python-version: '3.13'
       - name: Prepare existing PR and feedback
         run: |
-          test -n "$LLM_MODEL"
+          test -n "$LLM_MODEL" && test -n "$GEMINI_API_KEY"
+          cp benchmark/runners/openhands_sdk.py /tmp/benchmark-openhands-runner.py
           cp benchmark/independent_orders_task3.py /tmp/independent_orders_task3.py
           gh issue view 9 --json body --jq '.body' > /tmp/benchmark-issue.txt
           gh api repos/$GITHUB_REPOSITORY/issues/comments/6368728536 --jq '.body' > /tmp/revision-feedback.txt
