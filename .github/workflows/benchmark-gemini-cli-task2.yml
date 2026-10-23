@@ -1,0 +1,81 @@
+name: Benchmark Gemini CLI - Task 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: benchmark-gemini-cli-issue-2
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GEMINI_CLI_TRUST_WORKSPACE: "true"
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/gemini-cli-issue-2
+      BASELINE: 24d9555521e85c4d1f40da94b03361e70f469b24
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare independent baseline
+        run: |
+          test -n "$GEMINI_API_KEY" && test -n "$LLM_MODEL"
+          gh issue view 5 --json body --jq '.body' > /tmp/benchmark-issue.txt
+          cat >> /tmp/benchmark-issue.txt <<'EOF'
+
+          Work only in pricebot/checkout.py and tests/test_checkout.py.
+          Implement the complete checkout API contract in Issue #5 and comprehensive tests.
+          Run: python -m unittest discover -s tests -v
+          Do not edit CI, workflows, README, or benchmark evaluation files.
+          Do not create a PR yourself; the workflow will handle it.
+          EOF
+          git checkout "$BASELINE"
+          git switch -c "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "Frozen baseline: $BASELINE"
+      - name: Install Gemini CLI
+        run: |
+          npm install --global @google/gemini-cli
+          gemini --version
+      - name: Run Gemini CLI on issue 5
+        run: |
+          MODEL="${LLM_MODEL#gemini/}"
+          echo "Gemini CLI model: $MODEL"
+          gemini --model "$MODEL" --yolo --prompt "$(cat /tmp/benchmark-issue.txt)"
+      - name: Verify changes and tests
+        run: |
+          git status --short
+          python -m unittest discover -s tests -v
+          git add pricebot/checkout.py tests/test_checkout.py
+          git diff --cached --quiet && { echo "::error::Agent made no changes"; exit 1; }
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::error::Agent modified files outside allowed scope"
+            exit 1
+          fi
+          git diff --cached --name-only
+      - name: Push branch and create PR
+        run: |
+          git commit -m "Benchmark: Gemini CLI solves issue 5"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Benchmark Gemini CLI: implement checkout engine (#5)" \
+            --body "Candidate: gemini-cli. Frozen baseline: $BASELINE. Model: $LLM_MODEL. Independent task #5; review required. Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
