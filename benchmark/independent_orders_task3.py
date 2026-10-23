@@ -110,10 +110,10 @@ class Acceptance(unittest.TestCase):
             refund_order(b)
 
     def test_subcent_refund_is_valid(self):
-        o = paid([dict(sku="A", unit_price_cents=1, quantity=3)])
+        o = paid([dict(sku="A", unit_price_cents=1, quantity=3)], coupon={"type": "fixed", "value": 2})
         first = refund_order(o, quantities={"A": 1})
         self.assertEqual(first["refunded_cents"], 0)
-        self.assertEqual(refund_order(first, quantities={"A": 2})["refunded_cents"], 3)
+        self.assertEqual(refund_order(first, quantities={"A": 2})["refunded_cents"], 1)
 
     def test_state_machine_and_immutability(self):
         o = create_order([dict(sku="X", unit_price_cents=7, quantity=1)])
