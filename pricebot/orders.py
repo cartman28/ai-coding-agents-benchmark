@@ -174,7 +174,7 @@ def validate_order(order):
         raise ValueError("order keys do not match schema")
 
     order_id = order["order_id"]
-    if not isinstance(order_id, str) or isinstance(order_id, bool) or not order_id.startswith("ord_"):
+    if not isinstance(order_id, str) or isinstance(order_id, bool) or not order_id:
         raise ValueError("invalid order_id")
 
     version = order["version"]
@@ -370,8 +370,8 @@ def refund_order(order, *, quantities=None, expected_version=None):
         incremental = c_new - c_old
         total_incremental_refund += incremental
 
-    if total_incremental_refund <= 0:
-        raise ValueError("total refund amount must be positive")
+    if total_incremental_refund < 0:
+        raise ValueError("total refund amount cannot be negative")
 
     max_refundable = sum(l["total_cents"] for l in order["lines"])
     if order["refunded_cents"] + total_incremental_refund > max_refundable:

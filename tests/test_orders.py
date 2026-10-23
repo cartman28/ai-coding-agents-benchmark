@@ -183,6 +183,42 @@ class OrderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             refund_order(o, quantities={"A": 0})
 
+    def test_custom_order_id_lifecycle(self):
+        items = [{"sku": "A", "unit_price_cents": 100, "quantity": 2}]
+        o = create_order(items, order_id="customer-123")
+        self.assertEqual(o["order_id"], "customer-123")
+        o = transition_order(o, "submit")
+        o = transition_order(o, "pay")
+        o = refund_order(o, quantities={"A": 1})
+        import tempfile
+        from pathlib import Path
+        from pricebot.storage import save_order, load_order
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "order.json"
+            save_order(p, o)
+            self.assertEqual(load_order(p), o)
+
+    def test_zero_value_refund_is_valid(self):
+        items = [{"sku": "FREE", "unit_price_cents": 0, "quantity": 2}]
+        o = create_order(items, shipping_cents=50)
+        o = transition_order(o, "submit")
+        o = transition_order(o, "pay")
+        a = refund_order(o, quantities={"FREE": 1})
+        self.assertEqual(a["refunded_cents"], 0)
+        self.assertEqual(a["history"][-1]["amount_cents"], 0)
+        b = refund_order(a, quantities={"FREE": 1})
+        self.assertEqual(b["version"], a["version"] + 1)
+        self.assertEqual(b["refunded_cents"], 0)
+
+    def test_subcent_refund_is_valid(self):
+        items = [{"sku": "A", "unit_price_cents": 1, "quantity": 3}]
+        o = create_order(items, coupon={"type": "fixed", "value": 2})
+        o = transition_order(o, "submit")
+        o = transition_order(o, "pay")
+        first = refund_order(o, quantities={"A": 1})
+        self.assertEqual(first["refunded_cents"], 0)
+        self.assertEqual(refund_order(first, quantities={"A": 2})["refunded_cents"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
