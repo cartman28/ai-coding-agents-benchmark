@@ -1,0 +1,53 @@
+name: Independent Order Acceptance - Task 3
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - benchmark/independent_orders_task3.py
+      - .github/workflows/independent-orders-task3.yml
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: ${{ matrix.agent }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: OpenCode
+            branch: benchmark/opencode-issue-3
+          - agent: Gemini CLI
+            branch: benchmark/gemini-cli-issue-3
+          - agent: OpenHands SDK
+            branch: benchmark/openhands-issue-3
+    steps:
+      - name: Checkout independent tests
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: harness
+      - name: Checkout candidate PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify candidate scope and baseline
+        working-directory: candidate
+        run: |
+          git diff --name-only 673bbd9e05d5ba3756b0eeeb36f93cd243134d5d HEAD | sort > /tmp/changed.txt
+          printf 'pricebot/orders.py\npricebot/pricing.py\npricebot/storage.py\ntests/test_orders.py\ntests/test_pricing.py\ntests/test_storage.py\n' > /tmp/expected.txt
+          diff -u /tmp/expected.txt /tmp/changed.txt
+          git rev-parse HEAD
+      - name: Run independent acceptance tests
+        working-directory: candidate
+        run: |
+          PYTHONPATH=. python ../harness/benchmark/independent_orders_task3.py
