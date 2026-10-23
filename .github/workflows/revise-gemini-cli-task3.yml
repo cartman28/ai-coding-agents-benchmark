@@ -1,0 +1,87 @@
+name: Revise Gemini CLI - Task 3
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: benchmark-gemini-cli-issue-3
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GEMINI_CLI_TRUST_WORKSPACE: "true"
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/gemini-cli-issue-3
+      BASELINE: 673bbd9e05d5ba3756b0eeeb36f93cd243134d5d
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare existing PR and feedback
+        run: |
+          test -n "$LLM_MODEL"
+          cp benchmark/independent_orders_task3.py /tmp/independent_orders_task3.py
+          gh issue view 9 --json body --jq '.body' > /tmp/benchmark-issue.txt
+          gh api repos/$GITHUB_REPOSITORY/issues/comments/6368727701 --jq '.body' > /tmp/revision-feedback.txt
+          cat > /tmp/revision-prompt.txt <<'EOF'
+          You are revising an EXISTING implementation in an EXISTING pull request.
+          Keep the current branch and architecture; make focused repairs based on feedback.
+          Do not create a PR, do not reset to original baseline, do not touch workflow or benchmark files.
+          Allowed files: pricebot/pricing.py, pricebot/orders.py, pricebot/storage.py, tests/test_pricing.py, tests/test_orders.py, tests/test_storage.py.
+          After fixes run: python -m unittest discover -s tests -v
+          Also run: PYTHONPATH=. python /tmp/independent_orders_task3.py
+          The independent acceptance suite is read-only; do not edit it.
+          Original task:
+          EOF
+          cat /tmp/benchmark-issue.txt >> /tmp/revision-prompt.txt
+          printf '\n\nPR #11 reviewer feedback:\n' >> /tmp/revision-prompt.txt
+          cat /tmp/revision-feedback.txt >> /tmp/revision-prompt.txt
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rev-parse HEAD
+      - name: Install Gemini CLI
+        run: |
+          npm install --global @google/gemini-cli
+          gemini --version
+      - name: Revise Gemini CLI PR #11
+        run: |
+          MODEL="${LLM_MODEL#gemini/}"
+          echo "Gemini CLI model: $MODEL"
+          gemini --model "$MODEL" --yolo --prompt "$(cat /tmp/revision-prompt.txt)"
+      - name: Verify changes and tests
+        run: |
+          git status --short
+          python -m unittest discover -s tests -v
+          PYTHONPATH=. python /tmp/independent_orders_task3.py
+          git add pricebot/pricing.py pricebot/orders.py pricebot/storage.py tests/test_pricing.py tests/test_orders.py tests/test_storage.py
+          git diff --cached --quiet && { echo "::error::Agent made no changes"; exit 1; }
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::error::Agent modified files outside allowed scope"
+            exit 1
+          fi
+          git diff --cached --name-only
+      - name: Update existing PR #11
+        run: |
+          git commit -m "Benchmark: gemini-cli revise PR #11 after independent review"
+          git push origin "HEAD:$BRANCH"
+          gh pr comment 11 --body "Revision completed. Original PR updated; self-tests and independent acceptance passed. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
