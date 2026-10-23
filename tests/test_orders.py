@@ -194,6 +194,28 @@ class OrderTests(unittest.TestCase):
         order_trans = transition_order(order, "submit")
         self.assertEqual(order, order_copy)
 
+    def test_incremental_refund_history_and_zero_value(self):
+        items = [{"sku": "FREE", "unit_price_cents": 0, "quantity": 2}]
+        order = create_order(items)
+        order = transition_order(order, "submit")
+        order = transition_order(order, "pay")
+        
+        order = refund_order(order, quantities={"FREE": 1})
+        self.assertEqual(order["refunded_cents"], 0)
+        self.assertEqual(order["history"][-1]["quantities"], {"FREE": 1})
+        self.assertEqual(order["history"][-1]["amount_cents"], 0)
+        
+        order = refund_order(order, quantities={"FREE": 1})
+        self.assertEqual(order["history"][-1]["quantities"], {"FREE": 1})
+
+    def test_malformed_history_rejection(self):
+        items = [{"sku": "A", "unit_price_cents": 100, "quantity": 1}]
+        order = create_order(items)
+        bad = copy.deepcopy(order)
+        bad["history"][-1]["version"] = 999
+        with self.assertRaises(ValueError):
+            transition_order(bad, "submit")
+
 
 if __name__ == "__main__":
     unittest.main()

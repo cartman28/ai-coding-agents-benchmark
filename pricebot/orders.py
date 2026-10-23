@@ -113,10 +113,15 @@ def _validate_order_dict(order):
     history = order["history"]
     if not isinstance(history, list) or not history:
         raise ValueError("Order history must be a nonempty list")
-    for h in history:
+    if len(history) != order["version"]:
+        raise ValueError("Order history length must match order version")
+    for idx, h in enumerate(history):
         if not isinstance(h, dict):
             raise ValueError("History entry must be a dictionary")
-        _validate_non_bool_int(h.get("version"), "history version", min_val=1)
+        h_version = h.get("version")
+        _validate_non_bool_int(h_version, "history version", min_val=1)
+        if h_version != idx + 1:
+            raise ValueError("History entry version must match sequence index")
         htype = h.get("event")
         hstat = h.get("status")
         if isinstance(htype, bool) or not isinstance(htype, str) or not htype:
@@ -317,7 +322,8 @@ def refund_order(order, *, quantities=None, expected_version=None):
     for h in order["history"]:
         if h.get("event") == "refund":
             for qk, qv in h.get("quantities", {}).items():
-                sku_to_prev_refunded[qk] = qv  # history stores cumulative quantities
+                if qk in sku_to_prev_refunded:
+                    sku_to_prev_refunded[qk] += qv  # history stores incremental quantities
                 
     requested_refunds = {}
     if quantities is None:
@@ -364,11 +370,11 @@ def refund_order(order, *, quantities=None, expected_version=None):
         incremental = c_new - c_prev
         total_incremental_refund += incremental
         
-        if r_new > r_prev:
-            history_quantities_entry[sku] = r_new
+        if sku in requested_refunds and requested_refunds[sku] > 0:
+            history_quantities_entry[sku] = requested_refunds[sku]
             
-    if total_incremental_refund <= 0:
-        raise ValueError("Calculated refund amount must be positive")
+    if total_incremental_refund < 0:
+        raise ValueError("Calculated refund amount cannot be negative")
         
     max_refundable = sum(line["total_cents"] for line in order["lines"])
     if order["refunded_cents"] + total_incremental_refund > max_refundable:
