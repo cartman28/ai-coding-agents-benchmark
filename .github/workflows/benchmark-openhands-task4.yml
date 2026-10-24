@@ -1,0 +1,74 @@
+name: Benchmark OpenHands SDK - Task 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: benchmark-openhands-issue-4
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/openhands-issue-4
+      BASELINE: ffab070b251783d402da304238adea2b588a2bdb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Prepare independent baseline
+        run: |
+          test -n "$GEMINI_API_KEY" && test -n "$LLM_MODEL"
+          cp benchmark/runners/openhands_sdk.py /tmp/benchmark-openhands-runner.py
+          gh issue view 13 --json body --jq '.body' > /tmp/benchmark-issue.txt
+          cat >> /tmp/benchmark-issue.txt <<'EOF'
+
+          Work only in pricebot/inventory.py, pricebot/fulfillment.py, pricebot/journal.py, tests/test_inventory.py, tests/test_fulfillment.py, and tests/test_journal.py.
+          Implement the complete endurance contract in Issue #13 and at least 30 meaningful tests.
+          Run: python -m unittest discover -s tests -v
+          Do not edit CI, workflows, README, or benchmark evaluation files.
+          Do not create a PR yourself; the workflow will handle it.
+          EOF
+          git checkout "$BASELINE"
+          git switch -c "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "Frozen baseline: $BASELINE"
+      - name: Install OpenHands SDK
+        run: |
+          python -m pip install 'openhands-sdk==1.50.1' 'openhands-tools==1.50.1'
+          python -m pip install 'litellm==1.105.1' 'mcp==1.30.0' 'fastmcp==3.4.11'
+          python -m pip check
+      - name: Run OpenHands on issue 13
+        run: python /tmp/benchmark-openhands-runner.py < /tmp/benchmark-issue.txt
+      - name: Verify changes and tests
+        run: |
+          git status --short
+          python -m unittest discover -s tests -v
+          git add pricebot/inventory.py pricebot/fulfillment.py pricebot/journal.py tests/test_inventory.py tests/test_fulfillment.py tests/test_journal.py
+          git diff --cached --quiet && { echo "::error::Agent made no changes"; exit 1; }
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::error::Agent modified files outside allowed scope"; exit 1
+          fi
+          git diff --cached --name-only
+      - name: Push branch and create PR
+        run: |
+          git commit -m "Benchmark: OpenHands SDK solves issue 13"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Benchmark OpenHands SDK: implement inventory and journal endurance (#13)" \
+            --body "Candidate: openhands. Frozen baseline: $BASELINE. Model: $LLM_MODEL. Endurance task #4; review required. Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
