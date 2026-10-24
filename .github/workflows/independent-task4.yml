@@ -1,0 +1,33 @@
+name: Independent Task 4 Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate:
+          - opencode
+          - gemini-cli
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Preserve independent tests
+        run: cp benchmark/independent_inventory_task4.py /tmp/independent_inventory_task4.py
+      - name: Check out candidate
+        run: git checkout "origin/benchmark/${{ matrix.candidate }}-issue-4"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run candidate unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Run independent adversarial tests
+        run: PYTHONPATH=. python /tmp/independent_inventory_task4.py -v
