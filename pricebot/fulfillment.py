@@ -23,7 +23,7 @@ def _get_warehouse_available(warehouse: Union[Inventory, Mapping[str, int]]) -> 
             available[sku] = total - active_reserved.get(sku, 0)
         return available
     elif isinstance(warehouse, Mapping):
-        return {str(k): int(v) for k, v in warehouse.items()}
+        return {str(k): max(0, int(v)) for k, v in warehouse.items()}
     else:
         raise ValueError("Invalid warehouse representation")
 
