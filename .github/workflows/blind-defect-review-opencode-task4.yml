@@ -1,0 +1,71 @@
+name: Blind Defect Review opencode - Task 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blind-defect-review-opencode-task4
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/blind-review-seeded-defects-task4
+      BASELINE: ffab070b251783d402da304238adea2b588a2bdb
+      CI: "true"
+      OPENCODE_PERMISSION: '{"*":"allow"}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare read-only review
+        run: |
+          test -n "$LLM_MODEL"
+          git fetch origin "$BRANCH"
+          git checkout --detach "origin/$BRANCH"
+          git rev-parse HEAD > /tmp/reviewed-commit.txt
+          cat > /tmp/revision-prompt.txt <<'EOF'
+          You are an independent read-only code reviewer. Review the current inventory, fulfillment, and journal implementation for concrete correctness and security defects. This is a blind evaluation: do not assume that tests passing or failing implies any particular verdict. Do not modify repository files or create a PR. Investigate source code and run small focused reproductions if useful. Report each concrete bug with file/function, triggering input, observed vs expected behavior, and severity. Distinguish proven defects from hypotheses. Write the final Markdown report to /tmp/cross-review.md. Do not inspect other branches, GitHub history, or benchmark/workflow files. Do not assume how many bugs exist. Do not rely on pre-existing test descriptions as a list of defects.
+          EOF
+          cat /tmp/reviewed-commit.txt >> /tmp/revision-prompt.txt
+      - name: Install OpenCode
+        run: |
+          npm install --global opencode-ai
+          opencode --version
+      - name: Independent review
+        run: |
+          MODEL="${LLM_MODEL#gemini/}"
+          opencode run --agent build --model "google/$MODEL" "$(cat /tmp/revision-prompt.txt)" > /tmp/reviewer-output.txt
+          if [ ! -s /tmp/cross-review.md ]; then cp /tmp/reviewer-output.txt /tmp/cross-review.md; fi
+          test -s /tmp/cross-review.md
+      - name: Verify read-only
+        run: |
+          test -z "$(git status --porcelain)" || { git status --short; exit 1; }
+      - name: Upload review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blind-review-opencode-task4
+          path: |
+            /tmp/cross-review.md
+            /tmp/reviewer-output.txt
+            /tmp/reviewed-commit.txt
+      - name: Show review
+        if: always()
+        run: |
+          if [ -s /tmp/cross-review.md ]; then cat /tmp/cross-review.md >> "$GITHUB_STEP_SUMMARY"; cat /tmp/cross-review.md; fi
