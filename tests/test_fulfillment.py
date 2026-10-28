@@ -124,6 +124,19 @@ class FulfillmentTests(unittest.TestCase):
         self.assertEqual(len(errors), 0)
         self.assertEqual(wh1.on_hand["A"], 100)
 
+    def test_idempotent_plan_retry_missing_warehouse_preserves_reservation(self):
+        wh1 = Inventory({"A": 2})
+        wh2 = Inventory({"B": 2})
+        warehouses = {"wh1": wh1, "wh2": wh2}
+        plan = plan_fulfillment("order1", [{"sku": "A", "quantity": 1}, {"sku": "B", "quantity": 1}], warehouses)
+        apply_fulfillment(plan, warehouses)
+        before_wh1 = wh1.snapshot()
+        with self.assertRaises(ValueError):
+            apply_fulfillment(plan, {"wh1": wh1})
+        self.assertEqual(wh1.snapshot(), before_wh1)
+        res_id = f"{plan['plan_id']}_wh1"
+        self.assertEqual(wh1.reservations[res_id]["status"], "reserved")
+
 
 if __name__ == "__main__":
     unittest.main()

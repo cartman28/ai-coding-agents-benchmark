@@ -128,6 +128,33 @@ class JournalTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 load_snapshot(path)
 
+    def test_snapshot_invalid_values(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "snapshot.json"
+            # Negative on_hand
+            path.write_text('{"on_hand":{"A":-9},"reservations":{}}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_snapshot(path)
+
+            # Boolean on_hand
+            path.write_text('{"on_hand":{"A":true},"reservations":{}}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_snapshot(path)
+
+            # Boolean reservation quantity
+            path.write_text('{"on_hand":{"A":5},"reservations":{"r1":{"items":{"A":true},"status":"reserved"}}}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_snapshot(path)
+
+            # Invalid status
+            path.write_text('{"on_hand":{"A":5},"reservations":{"r1":{"items":{"A":1},"status":"invalid"}}}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_snapshot(path)
+
+            # write_snapshot should reject invalid mapping state
+            with self.assertRaises(ValueError):
+                write_snapshot(path, {"on_hand": {"A": -5}, "reservations": {}})
+
 
 if __name__ == "__main__":
     unittest.main()

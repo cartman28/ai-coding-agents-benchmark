@@ -141,6 +141,64 @@ def replay_journal(path: Union[str, Path]) -> Inventory:
     return inventory
 
 
+def _validate_snapshot_dict(data: Any) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("Snapshot must be a dictionary")
+    if "on_hand" not in data or "reservations" not in data:
+        raise ValueError("Snapshot missing 'on_hand' or 'reservations'")
+
+    on_hand = data["on_hand"]
+    if not isinstance(on_hand, dict):
+        raise ValueError("Snapshot 'on_hand' must be a dictionary")
+
+    validated_on_hand: Dict[str, int] = {}
+    for sku, qty in on_hand.items():
+        if not isinstance(sku, str) or not sku:
+            raise ValueError("Snapshot SKU must be a non-empty string")
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty < 0:
+            raise ValueError(f"Snapshot on-hand quantity for SKU {sku} must be a non-negative integer")
+        validated_on_hand[sku] = qty
+
+    reservations = data["reservations"]
+    if not isinstance(reservations, dict):
+        raise ValueError("Snapshot 'reservations' must be a dictionary")
+
+    validated_reservations: Dict[str, Dict[str, Any]] = {}
+    for res_id, res in reservations.items():
+        if not isinstance(res_id, str) or not res_id:
+            raise ValueError("Snapshot reservation ID must be a non-empty string")
+        if not isinstance(res, dict):
+            raise ValueError(f"Snapshot reservation {res_id} must be a dictionary")
+        if "items" not in res or "status" not in res:
+            raise ValueError(f"Snapshot reservation {res_id} missing 'items' or 'status'")
+
+        status = res["status"]
+        if status not in ("reserved", "released", "committed"):
+            raise ValueError(f"Snapshot reservation {res_id} has invalid status {status}")
+
+        items = res["items"]
+        if not isinstance(items, dict):
+            raise ValueError(f"Snapshot reservation {res_id} 'items' must be a dictionary")
+
+        validated_items: Dict[str, int] = {}
+        for sku, qty in items.items():
+            if not isinstance(sku, str) or not sku:
+                raise ValueError(f"Snapshot reservation {res_id} SKU must be a non-empty string")
+            if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+                raise ValueError(f"Snapshot reservation {res_id} quantity for SKU {sku} must be a positive integer")
+            validated_items[sku] = qty
+
+        validated_reservations[res_id] = {
+            "items": validated_items,
+            "status": status
+        }
+
+    return {
+        "on_hand": validated_on_hand,
+        "reservations": validated_reservations
+    }
+
+
 def write_snapshot(path: Union[str, Path], state: Union[Mapping[str, Any], Inventory]) -> None:
     """Write inventory state snapshot atomically using same-directory temp file and fsync."""
     p = Path(path)
@@ -150,12 +208,11 @@ def write_snapshot(path: Union[str, Path], state: Union[Mapping[str, Any], Inven
         state_dict = state.snapshot()
     elif isinstance(state, Mapping):
         state_dict = dict(state)
-        if "on_hand" not in state_dict or "reservations" not in state_dict:
-            raise ValueError("Snapshot state mapping must contain 'on_hand' and 'reservations'")
     else:
         raise ValueError("state must be Inventory or mapping")
 
-    content = _canonical_json(state_dict)
+    validated_state = _validate_snapshot_dict(state_dict)
+    content = _canonical_json(validated_state)
 
     temp_path: Optional[Path] = None
     try:
@@ -186,7 +243,4 @@ def load_snapshot(path: Union[str, Path]) -> Dict[str, Any]:
     except Exception as e:
         raise ValueError(f"Malformed snapshot file: {e}")
 
-    if not isinstance(data, dict) or "on_hand" not in data or "reservations" not in data:
-        raise ValueError("Invalid snapshot schema: missing 'on_hand' or 'reservations'")
-
-    return data
+    return _validate_snapshot_dict(data)

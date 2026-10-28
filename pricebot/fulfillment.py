@@ -116,10 +116,13 @@ def apply_fulfillment(plan: Mapping[str, Any], warehouse_inventories: Mapping[st
                 raise ValueError(f"Warehouse {wh_id} not found in inventory mapping")
             inv = warehouse_inventories[wh_id]
             res_id = f"{plan_id}_{wh_id}"
+            snap = inv.snapshot()
+            already_existed = res_id in snap["reservations"]
             inv.reserve(res_id, items)
-            applied_whs.append(wh_id)
+            if not already_existed:
+                applied_whs.append(wh_id)
     except Exception as e:
-        # Rollback all successfully applied reservations in this call
+        # Rollback only reservations actually created in this invocation
         for wh_id in applied_whs:
             inv = warehouse_inventories[wh_id]
             res_id = f"{plan_id}_{wh_id}"
