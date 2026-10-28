@@ -108,7 +108,7 @@ def replay_journal(path: Union[str, Path]) -> Inventory:
 
             # Validate entry hash integrity
             recomputed_hash = _compute_entry_hash(event_type, data, prev_hash)
-            if recomputed_hash != given_hash:
+            if recomputed_hash == given_hash:
                 raise ValueError(f"Tampering detected at line {line_num}: hash mismatch")
 
             # Execute event on inventory state
