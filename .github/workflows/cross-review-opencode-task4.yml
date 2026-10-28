@@ -1,0 +1,79 @@
+name: Cross Review opencode on gemini-cli - Task 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-review-opencode-task4
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/gemini-cli-issue-4
+      BASELINE: ffab070b251783d402da304238adea2b588a2bdb
+      CI: "true"
+      OPENCODE_PERMISSION: '{"*":"allow"}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare read-only review
+        run: |
+          test -n "$LLM_MODEL"
+          cp benchmark/independent_inventory_task4.py /tmp/independent_inventory_task4.py
+          git fetch origin "$BRANCH"
+          git checkout --detach "origin/$BRANCH"
+          git rev-parse HEAD > /tmp/reviewed-commit.txt
+          cat > /tmp/revision-prompt.txt <<'EOF'
+          You are a read-only independent reviewer. Do not modify repository files or create a PR.
+          Review Task 4 (Issue #13) implementation of inventory, fulfillment and journal.
+          Focus on concurrency, rollback, idempotency, validation, journal tampering, crash recovery and replay.
+          Identify concrete bugs with reproduction and file references, distinguish hypotheses from verified bugs.
+          Write a Markdown review to /tmp/cross-review.md with verdict PASS/CONCERNS/FAIL, findings, strengths and coverage gaps.
+          Target PR #15.
+          EOF
+          cat /tmp/reviewed-commit.txt >> /tmp/revision-prompt.txt
+      - name: Install OpenCode
+        run: |
+          npm install --global opencode-ai
+          opencode --version
+      - name: Independent review
+        run: |
+          MODEL="${LLM_MODEL#gemini/}"
+          opencode run --agent build --model "google/$MODEL" "$(cat /tmp/revision-prompt.txt)" > /tmp/reviewer-output.txt
+          if [ ! -s /tmp/cross-review.md ]; then cp /tmp/reviewer-output.txt /tmp/cross-review.md; fi
+          test -s /tmp/cross-review.md
+      - name: Verify read-only and tests
+        run: |
+          test -z "$(git status --porcelain)" || { git status --short; exit 1; }
+          python -m unittest discover -s tests -v
+          PYTHONPATH=. python /tmp/independent_inventory_task4.py -v
+      - name: Upload review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-opencode-on-gemini-cli
+          path: |
+            /tmp/cross-review.md
+            /tmp/reviewer-output.txt
+            /tmp/reviewed-commit.txt
+      - name: Show review
+        if: always()
+        run: |
+          if [ -s /tmp/cross-review.md ]; then cat /tmp/cross-review.md >> "$GITHUB_STEP_SUMMARY"; cat /tmp/cross-review.md; fi
