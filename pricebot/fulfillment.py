@@ -148,7 +148,7 @@ def apply_fulfillment(plan: Mapping[str, Any], warehouse_inventories: Mapping[st
 
             inventory.reserve(reservation_id, items)
 
-            if not already_reserved:
+            if already_reserved:
                 newly_applied_whs.append(wh_id)
     except Exception as e:
         # Rollback only reservations created by the current invocation
