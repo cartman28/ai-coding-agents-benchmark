@@ -1,0 +1,87 @@
+name: Revise OpenCode - Task 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: benchmark-opencode-issue-4
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      BRANCH: benchmark/opencode-issue-4
+      BASELINE: ffab070b251783d402da304238adea2b588a2bdb
+      CI: "true"
+      OPENCODE_PERMISSION: '{"*":"allow"}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare existing PR and feedback
+        run: |
+          test -n "$LLM_MODEL"
+          cp benchmark/independent_inventory_task4.py /tmp/independent_inventory_task4.py
+          gh issue view 13 --json body --jq '.body' > /tmp/benchmark-issue.txt
+          gh api repos/$GITHUB_REPOSITORY/issues/comments/6464929982 --jq '.body' > /tmp/revision-feedback.txt
+          cat > /tmp/revision-prompt.txt <<'EOF'
+          You are revising an EXISTING implementation in an EXISTING pull request.
+          Keep the current branch and architecture; make focused repairs based on feedback.
+          Do not create a PR, do not reset to original baseline, do not touch workflow or benchmark files.
+          Allowed files: pricebot/inventory.py, pricebot/fulfillment.py, pricebot/journal.py, tests/test_inventory.py, tests/test_fulfillment.py, tests/test_journal.py.
+          After fixes run: python -m unittest discover -s tests -v
+          Also run: PYTHONPATH=. python /tmp/independent_inventory_task4.py
+          The independent acceptance suite is read-only; do not edit it.
+          Original task:
+          EOF
+          cat /tmp/benchmark-issue.txt >> /tmp/revision-prompt.txt
+          printf '\n\nPR #14 reviewer feedback:\n' >> /tmp/revision-prompt.txt
+          cat /tmp/revision-feedback.txt >> /tmp/revision-prompt.txt
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rev-parse HEAD
+      - name: Install OpenCode
+        run: |
+          npm install --global opencode-ai
+          opencode --version
+      - name: Revise OpenCode PR #14
+        run: |
+          MODEL="${LLM_MODEL#gemini/}"
+          echo "OpenCode model: google/$MODEL"
+          opencode run --agent build --model "google/$MODEL" "$(cat /tmp/revision-prompt.txt)"
+      - name: Verify changes and tests
+        run: |
+          git status --short
+          python -m unittest discover -s tests -v
+          PYTHONPATH=. python /tmp/independent_inventory_task4.py
+          git add pricebot/inventory.py pricebot/fulfillment.py pricebot/journal.py tests/test_inventory.py tests/test_fulfillment.py tests/test_journal.py
+          git diff --cached --quiet && { echo "::error::Agent made no changes"; exit 1; }
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::error::Agent modified files outside allowed scope"
+            exit 1
+          fi
+          git diff --cached --name-only
+      - name: Update existing PR #14
+        run: |
+          git commit -m "Benchmark: opencode revise PR #14 after independent review"
+          git push origin "HEAD:$BRANCH"
+          gh pr comment 14 --body "Revision completed. Original PR updated; self-tests and independent acceptance passed. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
