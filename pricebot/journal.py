@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Mapping, Union
 
-from pricebot.inventory import Inventory
+from pricebot.inventory import Inventory, _validate_snapshot_state
 
 
 def _compute_entry_hash(event_type: str, data: Dict[str, Any], prev_hash: Union[str, None]) -> str:
@@ -154,12 +154,7 @@ def write_snapshot(path: Union[str, Path], state: Mapping[str, Any]) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
-    if not isinstance(state, Mapping):
-        raise ValueError("Snapshot state must be a mapping")
-
-    # Validate snapshot schema
-    if "on_hand" not in state or "reservations" not in state:
-        raise ValueError("Snapshot missing required keys 'on_hand' and 'reservations'")
+    _validate_snapshot_state(state)
 
     canonical_json = json.dumps(state, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -192,13 +187,6 @@ def load_snapshot(path: Union[str, Path]) -> Dict[str, Any]:
     except Exception as e:
         raise ValueError(f"Invalid snapshot JSON: {e}") from e
 
-    if not isinstance(data, dict):
-        raise ValueError("Snapshot root must be an object/dict")
-
-    if "on_hand" not in data or "reservations" not in data:
-        raise ValueError("Snapshot missing required schema keys 'on_hand' and 'reservations'")
-
-    if not isinstance(data["on_hand"], Mapping) or not isinstance(data["reservations"], Mapping):
-        raise ValueError("Snapshot 'on_hand' and 'reservations' must be mappings")
+    _validate_snapshot_state(data)
 
     return data

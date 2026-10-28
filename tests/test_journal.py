@@ -128,6 +128,57 @@ class JournalTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 replay_journal(p)
 
+    def test_snapshot_validation_rejects_negative_and_invalid(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "bad_snapshot.json"
+            
+            # 1. Negative on_hand quantity (-9)
+            bad_state_1 = {
+                "on_hand": {"SKU1": -9},
+                "reservations": {}
+            }
+            with self.assertRaises(ValueError):
+                write_snapshot(p, bad_state_1)
+            
+            p.write_text(json.dumps(bad_state_1), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_snapshot(p)
+
+            # 2. Boolean quantity in on_hand
+            bad_state_2 = {
+                "on_hand": {"SKU1": True},
+                "reservations": {}
+            }
+            with self.assertRaises(ValueError):
+                load_snapshot(p)
+
+            # 3. Invalid reservation status
+            bad_state_3 = {
+                "on_hand": {"SKU1": 10},
+                "reservations": {
+                    "res-1": {
+                        "status": "invalid_status",
+                        "items": {"SKU1": 2}
+                    }
+                }
+            }
+            with self.assertRaises(ValueError):
+                load_snapshot(p)
+
+            # 4. Invalid reservation items (negative qty)
+            bad_state_4 = {
+                "on_hand": {"SKU1": 10},
+                "reservations": {
+                    "res-1": {
+                        "status": "reserved",
+                        "items": {"SKU1": -2}
+                    }
+                }
+            }
+            with self.assertRaises(ValueError):
+                load_snapshot(p)
+
+
 
 if __name__ == "__main__":
     unittest.main()

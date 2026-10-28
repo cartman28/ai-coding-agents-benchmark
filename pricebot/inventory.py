@@ -189,3 +189,50 @@ class Inventory:
                 "on_hand": self._on_hand,
                 "reservations": self._reservations
             })
+
+
+def _validate_snapshot_state(state: Any) -> None:
+    """Validate snapshot schema, types, and values for on_hand and reservations."""
+    if isinstance(state, bool) or not isinstance(state, Mapping):
+        raise ValueError("Snapshot state must be a mapping")
+
+    if "on_hand" not in state or "reservations" not in state:
+        raise ValueError("Snapshot missing required keys 'on_hand' and 'reservations'")
+
+    on_hand = state["on_hand"]
+    reservations = state["reservations"]
+
+    if isinstance(on_hand, bool) or not isinstance(on_hand, Mapping):
+        raise ValueError("Snapshot 'on_hand' must be a mapping")
+    if isinstance(reservations, bool) or not isinstance(reservations, Mapping):
+        raise ValueError("Snapshot 'reservations' must be a mapping")
+
+    seen_skus = set()
+    for sku, qty in on_hand.items():
+        v_sku = _validate_sku(sku)
+        if v_sku in seen_skus:
+            raise ValueError(f"Duplicate SKU in snapshot on_hand: {v_sku}")
+        seen_skus.add(v_sku)
+        _validate_quantity(qty, allow_zero=True)
+
+    seen_res_ids = set()
+    for res_id, res_data in reservations.items():
+        if isinstance(res_id, bool) or not isinstance(res_id, str) or not res_id.strip():
+            raise ValueError("Reservation ID in snapshot must be a non-empty string")
+        if res_id in seen_res_ids:
+            raise ValueError(f"Duplicate reservation ID in snapshot: {res_id}")
+        seen_res_ids.add(res_id)
+
+        if isinstance(res_data, bool) or not isinstance(res_data, Mapping):
+            raise ValueError(f"Reservation data for {res_id} must be a mapping")
+
+        if "status" not in res_data or "items" not in res_data:
+            raise ValueError(f"Reservation {res_id} missing 'status' or 'items'")
+
+        status = res_data["status"]
+        if isinstance(status, bool) or not isinstance(status, str) or status not in ("reserved", "released", "committed"):
+            raise ValueError(f"Invalid reservation status in snapshot: {status}")
+
+        items = res_data["items"]
+        _normalize_items(items)
+

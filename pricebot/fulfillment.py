@@ -132,7 +132,7 @@ def apply_fulfillment(plan: Mapping[str, Any], warehouse_inventories: Mapping[st
     plan_id = plan["plan_id"]
     allocations = plan["allocations"]
 
-    applied_whs: List[str] = []
+    newly_applied_whs: List[str] = []
 
     try:
         for wh_id, items in allocations.items():
@@ -140,11 +140,19 @@ def apply_fulfillment(plan: Mapping[str, Any], warehouse_inventories: Mapping[st
                 raise ValueError(f"Warehouse inventory missing for ID: {wh_id}")
             inventory = warehouse_inventories[wh_id]
             reservation_id = f"fulfillment_{plan_id}_{wh_id}"
+
+            already_reserved = False
+            with inventory._lock:
+                if reservation_id in inventory._reservations and inventory._reservations[reservation_id]["status"] == "reserved":
+                    already_reserved = True
+
             inventory.reserve(reservation_id, items)
-            applied_whs.append(wh_id)
+
+            if not already_reserved:
+                newly_applied_whs.append(wh_id)
     except Exception as e:
-        # Rollback all successfully applied reservations in this attempt
-        for wh_id in applied_whs:
+        # Rollback only reservations created by the current invocation
+        for wh_id in newly_applied_whs:
             try:
                 reservation_id = f"fulfillment_{plan_id}_{wh_id}"
                 warehouse_inventories[wh_id].release(reservation_id)

@@ -109,6 +109,28 @@ class FulfillmentTests(unittest.TestCase):
             except ValueError:
                 pass
 
+    def test_apply_fulfillment_rollback_only_current_invocation(self):
+        inv_a = Inventory({"SKU1": 2})
+        inv_b = Inventory({"SKU1": 2})
+        plan = plan_fulfillment("ord-rollback-regress", [{"sku": "SKU1", "quantity": 3}], {"wh_a": inv_a, "wh_b": inv_b})
+        
+        # First successful application (reserves wh_a for 2, wh_b for 1)
+        apply_fulfillment(plan, {"wh_a": inv_a, "wh_b": inv_b})
+        res_id_a = f"fulfillment_{plan['plan_id']}_wh_a"
+        res_id_b = f"fulfillment_{plan['plan_id']}_wh_b"
+        self.assertEqual(inv_a.snapshot()["reservations"][res_id_a]["status"], "reserved")
+        self.assertEqual(inv_b.snapshot()["reservations"][res_id_b]["status"], "reserved")
+
+        # Tamper/release wh_b's reservation so that retry fails on wh_b
+        inv_b.release(res_id_b)
+
+        with self.assertRaises(ValueError):
+            apply_fulfillment(plan, {"wh_a": inv_a, "wh_b": inv_b})
+
+        # wh_a pre-existing reservation must NOT be released
+        self.assertEqual(inv_a.snapshot()["reservations"][res_id_a]["status"], "reserved")
+
+
 
 if __name__ == "__main__":
     unittest.main()
